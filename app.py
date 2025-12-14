@@ -15,10 +15,23 @@ st.set_page_config(
 # =====================================================
 # LOAD MODEL & DATASET
 # =====================================================
-model = joblib.load("salary_prediction_model.pkl")
-df = pd.read_csv("Salary_Data.csv")
+@st.cache_resource
+def load_model():
+    return joblib.load("salary_prediction_model.pkl")
 
-job_titles = sorted(df["Job Title"].dropna().unique())
+@st.cache_data
+def load_data():
+    return pd.read_csv("Salary_Data.csv")
+
+model = load_model()
+df = load_data()
+
+# Pastikan tipe data aman
+df["Job Title"] = df["Job Title"].astype(str)
+df["Education Level"] = df["Education Level"].astype(str)
+df["Gender"] = df["Gender"].astype(str)
+
+job_titles = sorted(df["Job Title"].unique())
 
 # =====================================================
 # SESSION STATE
@@ -51,7 +64,6 @@ input, select {
     color: #e5e7eb !important;
     border: 1px solid #1e293b !important;
     border-radius: 10px !important;
-    cursor: pointer !important;
 }
 
 .stButton>button {
@@ -95,7 +107,7 @@ st.markdown("""
 <div style="text-align:center; padding:3rem 0;">
     <h1 style="font-size:3rem;">💼 SalarySense</h1>
     <p style="font-size:1.15rem; max-width:720px; margin:auto;">
-        Sistem prediksi dan proyeksi gaji berbasis <b>Machine Learning</b>  
+        Sistem prediksi dan proyeksi gaji berbasis <b>Machine Learning</b><br>
         untuk membantu memahami nilai dan potensi karier di pasar kerja.
     </p>
 </div>
@@ -112,21 +124,39 @@ with left:
 
     usia = st.slider("Usia", 18, 65, 25)
     pengalaman = st.slider("Pengalaman Kerja (tahun)", 0, 40, 1)
-    pendidikan = st.selectbox("Pendidikan", ["High School", "Bachelor", "Master", "PhD"])
+    pendidikan = st.selectbox(
+        "Pendidikan",
+        sorted(df["Education Level"].unique())
+    )
     pekerjaan = st.selectbox("Pekerjaan", job_titles)
-    gender = st.radio("Jenis Kelamin", ["Male", "Female"], horizontal=True)
+    gender = st.radio(
+        "Jenis Kelamin",
+        sorted(df["Gender"].unique()),
+        horizontal=True
+    )
 
     if st.button("🚀 Prediksi Gaji"):
-        st.session_state.input_df = pd.DataFrame({
-            "Age": [usia],
-            "Years of Experience": [pengalaman],
-            "Education Level": [pendidikan],
-            "Job Title": [pekerjaan],
-            "Gender": [gender]
-        })
+        input_dict = {
+            "Age": float(usia),
+            "Years of Experience": float(pengalaman),
+            "Education Level": str(pendidikan),
+            "Job Title": str(pekerjaan),
+            "Gender": str(gender)
+        }
 
-        st.session_state.gaji = model.predict(st.session_state.input_df)[0]
-        st.session_state.predicted = True
+        st.session_state.input_df = pd.DataFrame([input_dict])
+
+        try:
+            st.session_state.gaji = model.predict(
+                st.session_state.input_df
+            )[0]
+            st.session_state.predicted = True
+        except Exception:
+            st.error(
+                "❌ Terjadi kesalahan prediksi. "
+                "Pastikan input sesuai dengan data training."
+            )
+            st.stop()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -153,7 +183,6 @@ with right:
         c1.metric("Batas Bawah Wajar", f"${min_gaji:,.0f}")
         c2.metric("Batas Atas Wajar", f"${max_gaji:,.0f}")
 
-        # === POSISI PASAR (2)
         avg_market = df[df["Job Title"] == pekerjaan]["Salary"].mean()
 
         if gaji < avg_market * 0.9:
@@ -178,7 +207,7 @@ if st.session_state.predicted:
     st.markdown("<span class='badge'>Proyeksi</span>", unsafe_allow_html=True)
     st.subheader("📈 Proyeksi Pertumbuhan Gaji")
 
-    tahun = list(range(0, 11))
+    tahun = range(11)
     gaji_proyeksi = []
 
     for t in tahun:
@@ -187,9 +216,9 @@ if st.session_state.predicted:
         gaji_proyeksi.append(model.predict(temp_df)[0])
 
     proyeksi_df = pd.DataFrame({
-        "Tahun": tahun,
+        "Tahun Pengalaman Tambahan": list(tahun),
         "Estimasi Gaji": gaji_proyeksi
-    }).set_index("Tahun")
+    }).set_index("Tahun Pengalaman Tambahan")
 
     st.line_chart(proyeksi_df)
 
@@ -197,13 +226,13 @@ if st.session_state.predicted:
 
     st.metric(
         "Rata-rata pertumbuhan gaji per tahun",
-        f"{growth_rate:.2f} %"
+        f"{growth_rate:.2f}%"
     )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
-# PENJELASAN & REKOMENDASI
+# INSIGHT & REKOMENDASI
 # =====================================================
 if st.session_state.predicted:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -211,25 +240,23 @@ if st.session_state.predicted:
     st.subheader("🧠 Analisis & Rekomendasi")
 
     st.write("""
-    **Faktor utama yang memengaruhi hasil prediksi:**
-    - **Pengalaman kerja**: semakin lama pengalaman, semakin tinggi potensi gaji.
-    - **Tingkat pendidikan**: pendidikan yang lebih tinggi meningkatkan baseline pendapatan.
-    - **Jenis pekerjaan**: mencerminkan permintaan dan kompleksitas peran di pasar kerja.
+    **Faktor utama yang memengaruhi prediksi:**
+    - Pengalaman kerja
+    - Tingkat pendidikan
+    - Jenis dan kompleksitas pekerjaan
     """)
-
-    st.write("**Rekomendasi pengembangan karier:**")
 
     rekomendasi = []
 
     if pengalaman < 3:
-        rekomendasi.append("🔹 Fokus menambah pengalaman kerja dan skill praktis.")
+        rekomendasi.append("🔹 Tingkatkan pengalaman dan skill praktis.")
     if pendidikan in ["High School", "Bachelor"]:
-        rekomendasi.append("🔹 Pertimbangkan peningkatan pendidikan atau sertifikasi profesional.")
+        rekomendasi.append("🔹 Pertimbangkan sertifikasi atau pendidikan lanjutan.")
     if posisi.startswith("🔻"):
-        rekomendasi.append("🔹 Pertimbangkan negosiasi gaji atau eksplorasi peluang di perusahaan lain.")
+        rekomendasi.append("🔹 Pertimbangkan negosiasi gaji atau peluang baru.")
 
     if not rekomendasi:
-        rekomendasi.append("🔹 Pertahankan jalur karier Anda, posisi Anda sudah kompetitif.")
+        rekomendasi.append("🔹 Jalur karier Anda sudah kompetitif, pertahankan konsistensi.")
 
     for r in rekomendasi:
         st.write(r)
@@ -241,7 +268,7 @@ if st.session_state.predicted:
 # =====================================================
 st.markdown("""
 <div class="footer">
-    © 2025 • SalarySense  
-    <br>Final Project • Machine Learning
+    © 2025 • SalarySense<br>
+    Final Project • Machine Learning
 </div>
 """, unsafe_allow_html=True)
