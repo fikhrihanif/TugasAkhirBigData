@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# LOAD MODEL & DATASET
+# LOAD MODEL & DATA
 # =====================================================
 @st.cache_resource
 def load_model():
@@ -26,12 +26,13 @@ def load_data():
 model = load_model()
 df = load_data()
 
-# Pastikan tipe data aman
-df["Job Title"] = df["Job Title"].astype(str)
-df["Education Level"] = df["Education Level"].astype(str)
-df["Gender"] = df["Gender"].astype(str)
+# Pastikan tipe data kategori aman
+for col in ["Job Title", "Education Level", "Gender"]:
+    df[col] = df[col].astype(str)
 
 job_titles = sorted(df["Job Title"].unique())
+education_levels = sorted(df["Education Level"].unique())
+genders = sorted(df["Gender"].unique())
 
 # =====================================================
 # SESSION STATE
@@ -124,38 +125,35 @@ with left:
 
     usia = st.slider("Usia", 18, 65, 25)
     pengalaman = st.slider("Pengalaman Kerja (tahun)", 0, 40, 1)
-    pendidikan = st.selectbox(
-        "Pendidikan",
-        sorted(df["Education Level"].unique())
-    )
+    pendidikan = st.selectbox("Pendidikan", education_levels)
     pekerjaan = st.selectbox("Pekerjaan", job_titles)
-    gender = st.radio(
-        "Jenis Kelamin",
-        sorted(df["Gender"].unique()),
-        horizontal=True
-    )
+    gender = st.radio("Jenis Kelamin", genders, horizontal=True)
 
     if st.button("🚀 Prediksi Gaji"):
-        input_dict = {
+        # ===============================
+        # FIX UTAMA: PAKSA STRUKTUR INPUT
+        # ===============================
+        raw_input = pd.DataFrame([{
             "Age": float(usia),
             "Years of Experience": float(pengalaman),
             "Education Level": str(pendidikan),
             "Job Title": str(pekerjaan),
             "Gender": str(gender)
-        }
+        }])
 
-        st.session_state.input_df = pd.DataFrame([input_dict])
+        # PAKSA kolom SAMA PERSIS seperti training
+        input_df = raw_input.reindex(
+            columns=model.feature_names_in_,
+            fill_value=np.nan
+        )
+
+        st.session_state.input_df = input_df
 
         try:
-            st.session_state.gaji = model.predict(
-                st.session_state.input_df
-            )[0]
+            st.session_state.gaji = model.predict(input_df)[0]
             st.session_state.predicted = True
-        except Exception:
-            st.error(
-                "❌ Terjadi kesalahan prediksi. "
-                "Pastikan input sesuai dengan data training."
-            )
+        except Exception as e:
+            st.error("❌ Terjadi kesalahan prediksi. Struktur input tidak sesuai model.")
             st.stop()
 
     st.markdown("</div>", unsafe_allow_html=True)
