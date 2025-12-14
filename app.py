@@ -96,6 +96,35 @@ with right:
         gaji = st.session_state.gaji
         avg_market = df[df["Job Title"] == pekerjaan]["Salary"].mean()
 
+        min_gaji = gaji * 0.9
+        max_gaji = gaji * 1.1
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "💰 Estimasi Gaji",
+            f"${gaji:,.0f}"
+        )
+
+        c2.metric(
+            "📉 Minimum Wajar",
+            f"${min_gaji:,.0f}"
+        )
+
+        c3.metric(
+            "📈 Maksimum Wajar",
+            f"${max_gaji:,.0f}"
+        )
+
+        if gaji < avg_market * 0.9:
+            posisi = "🔻 Di bawah rata-rata pasar"
+        elif gaji > avg_market * 1.1:
+            posisi = "🔺 Di atas rata-rata pasar"
+        else:
+            posisi = "✅ Kompetitif di pasar kerja"
+
+        st.info(f"**Posisi Pasar:** {posisi}")
+
         st.metric(
             "💰 Estimasi Gaji Tahunan",
             f"${gaji:,.0f}"
