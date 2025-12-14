@@ -1,19 +1,18 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import numpy as np
 
 # =====================================================
-# PAGE CONFIG
+# CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="SalarySense • Prediksi Gaji",
+    page_title="SalarySense",
     page_icon="💼",
     layout="wide"
 )
 
 # =====================================================
-# LOAD MODEL & DATASET
+# LOAD MODEL & DATA
 # =====================================================
 @st.cache_resource
 def load_model():
@@ -26,35 +25,11 @@ def load_data():
 model = load_model()
 df = load_data()
 
-# ===============================
-# PENTING: DEFINISI FITUR = SAMA DENGAN TRAINING
-# ===============================
-FEATURE_COLUMNS = df.drop(columns=["Salary"]).columns.tolist()
-
-# Pisahkan tipe fitur (SESUAI TRAINING)
-numerical_features = df[FEATURE_COLUMNS].select_dtypes(
-    include=["int64", "float64"]
-).columns.tolist()
-
-categorical_features = df[FEATURE_COLUMNS].select_dtypes(
-    include=["object"]
-).columns.tolist()
-
-# Pastikan kategori string
-for col in categorical_features:
-    df[col] = df[col].astype(str)
-
-# =====================================================
-# SESSION STATE
-# =====================================================
-if "predicted" not in st.session_state:
-    st.session_state.predicted = False
-
 # =====================================================
 # UI
 # =====================================================
 st.title("💼 SalarySense")
-st.caption("Prediksi dan proyeksi gaji berbasis Machine Learning")
+st.caption("Prediksi gaji berbasis Machine Learning")
 
 left, right = st.columns([1.2, 1])
 
@@ -65,88 +40,84 @@ with left:
     pengalaman = st.slider("Pengalaman Kerja (tahun)", 0, 40, 1)
 
     pendidikan = st.selectbox(
-        "Tingkat Pendidikan",
-        sorted(df["Education Level"].unique())
+        "Pendidikan",
+        sorted(df["Education Level"].dropna().unique())
     )
 
     pekerjaan = st.selectbox(
         "Pekerjaan",
-        sorted(df["Job Title"].unique())
+        sorted(df["Job Title"].dropna().unique())
     )
 
     gender = st.radio(
         "Jenis Kelamin",
-        sorted(df["Gender"].unique()),
+        sorted(df["Gender"].dropna().unique()),
         horizontal=True
     )
 
     if st.button("🚀 Prediksi Gaji"):
-        # ===============================
-        # FIX FINAL: BANGUN INPUT SESUAI TRAINING
-        # ===============================
-        input_data = {col: np.nan for col in FEATURE_COLUMNS}
+        # =====================================================
+        # FIX UTAMA: AMBIL ROW ASLI DATASET
+        # =====================================================
+        input_df = df.drop(columns=["Salary"]).iloc[[0]].copy()
 
-        input_data["Age"] = float(usia)
-        input_data["Years of Experience"] = float(pengalaman)
-        input_data["Education Level"] = str(pendidikan)
-        input_data["Job Title"] = str(pekerjaan)
-        input_data["Gender"] = str(gender)
-
-        input_df = pd.DataFrame([input_data])
+        # TIMPA DENGAN INPUT USER
+        input_df["Age"] = usia
+        input_df["Years of Experience"] = pengalaman
+        input_df["Education Level"] = pendidikan
+        input_df["Job Title"] = pekerjaan
+        input_df["Gender"] = gender
 
         try:
-            st.session_state.gaji = model.predict(input_df)[0]
+            gaji = model.predict(input_df)[0]
+            st.session_state.gaji = gaji
             st.session_state.input_df = input_df
             st.session_state.predicted = True
         except Exception as e:
-            st.error("❌ Prediksi gagal. Struktur input tidak sesuai model.")
+            st.error("❌ Prediksi gagal. Model tidak menerima input.")
+            st.exception(e)
             st.stop()
 
 # =====================================================
 # OUTPUT
 # =====================================================
 with right:
-    st.subheader("📊 Hasil Prediksi")
+    st.subheader("📊 Hasil")
 
-    if st.session_state.predicted:
+    if st.session_state.get("predicted", False):
         gaji = st.session_state.gaji
+        st.metric("💰 Estimasi Gaji Tahunan", f"${gaji:,.0f}")
 
-        st.metric(
-            label="💰 Estimasi Gaji Tahunan",
-            value=f"${gaji:,.0f}"
-        )
+        avg = df[df["Job Title"] == pekerjaan]["Salary"].mean()
 
-        avg_market = df[df["Job Title"] == pekerjaan]["Salary"].mean()
-
-        if gaji < avg_market * 0.9:
+        if gaji < avg * 0.9:
             posisi = "🔻 Di bawah rata-rata pasar"
-        elif gaji > avg_market * 1.1:
+        elif gaji > avg * 1.1:
             posisi = "🔺 Di atas rata-rata pasar"
         else:
-            posisi = "✅ Kompetitif di pasar kerja"
+            posisi = "✅ Kompetitif"
 
-        st.info(f"Posisi gaji Anda: **{posisi}**")
+        st.info(f"Posisi pasar: **{posisi}**")
+    else:
+        st.info("Masukkan data dan klik Prediksi Gaji")
 
 # =====================================================
-# PROYEKSI KARIER
+# PROYEKSI
 # =====================================================
-if st.session_state.predicted:
-    st.subheader("📈 Proyeksi Gaji 10 Tahun")
+if st.session_state.get("predicted", False):
+    st.subheader("📈 Proyeksi 10 Tahun")
 
-    tahun = range(11)
+    tahun = list(range(11))
     proyeksi = []
 
     for t in tahun:
-        temp_df = st.session_state.input_df.copy()
-        temp_df["Years of Experience"] += t
-        proyeksi.append(model.predict(temp_df)[0])
+        temp = st.session_state.input_df.copy()
+        temp["Years of Experience"] += t
+        proyeksi.append(model.predict(temp)[0])
 
     chart_df = pd.DataFrame({
-        "Tahun": list(tahun),
+        "Tahun": tahun,
         "Estimasi Gaji": proyeksi
     }).set_index("Tahun")
 
     st.line_chart(chart_df)
-
-    growth_rate = ((proyeksi[-1] / proyeksi[0]) ** (1 / 10) - 1) * 100
-    st.caption(f"📈 Rata-rata pertumbuhan gaji: **{growth_rate:.2f}% per tahun**")
